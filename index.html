@@ -87,7 +87,9 @@
     .modeBtn:disabled{ opacity: .55; cursor: default; }
     .miniBtn{ min-width: 96px; }
 
-    .clockBox{ width: min(380px, 92vw); display:flex; justify-content:center; align-items:center; margin-top: 2px; }
+    .clockBox{ width: min(380px, 92vw); display:flex; justify-content:center; align-items:center; margin-top: 2px; transition: width .2s ease; }
+    .clockBox svg{ width: 100%; height: auto; display: block; }
+    .clockBox.big{ width: min(560px, 96vw); }
 
     .historyWrap{
       width: min(520px, 96vw); border:1px solid var(--line);
@@ -157,9 +159,10 @@
           <button class="modeBtn miniBtn" id="toggleLong">ながいはり</button>
           <button class="modeBtn miniBtn active" id="toggleZone">○じゾーン</button>
           <button class="modeBtn miniBtn active" id="toggleNums">すうじ</button>
+          <button class="modeBtn miniBtn" id="toggleBig">🔍ルーペ</button>
         </div>
 
-        <div class="clockBox" aria-label="とけい">
+        <div class="clockBox" id="clockBox" aria-label="とけい">
           <svg id="clock" width="380" height="380" viewBox="0 0 320 320" role="img" aria-labelledby="clockTitle">
             <title id="clockTitle">はりのとけい</title>
 
@@ -167,23 +170,32 @@
               <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
                 <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="rgba(20,30,60,.18)"/>
               </filter>
+              <clipPath id="loupeClip"><circle id="loupeClipC" cx="160" cy="160" r="55"/></clipPath>
             </defs>
 
-            <circle cx="160" cy="160" r="142" fill="#ffffff" stroke="#e7eaf3" stroke-width="10" filter="url(#softShadow)"/>
-            <circle cx="160" cy="160" r="126" fill="none" stroke="#f0f2f8" stroke-width="2"/>
+            <g id="clockContent">
+              <circle cx="160" cy="160" r="142" fill="#ffffff" stroke="#e7eaf3" stroke-width="10" filter="url(#softShadow)"/>
+              <circle cx="160" cy="160" r="126" fill="none" stroke="#f0f2f8" stroke-width="2"/>
 
-            <g id="marks" stroke="#2a3042" stroke-linecap="round"></g>
-            <g id="nums" fill="#2a3042" font-size="18" font-weight="800" text-anchor="middle" dominant-baseline="middle"></g>
+              <g id="marks" stroke="#2a3042" stroke-linecap="round"></g>
+              <g id="nums" fill="#2a3042" font-size="18" font-weight="800" text-anchor="middle" dominant-baseline="middle"></g>
 
-            <!-- ○じゾーンのドーナツリング（短針の先のおたすけ） -->
-            <g id="zoneRing"></g>
+              <!-- ○じゾーンのドーナツリング（短針の先のおたすけ） -->
+              <g id="zoneRing"></g>
 
-            <g id="hands" transform="translate(160 160)">
-              <line id="minHand"  x1="0" y1="12" x2="0" y2="-92" stroke="#2a3042" stroke-width="6" stroke-linecap="round"/>
-              <line id="hourHand" x1="0" y1="10" x2="0" y2="-62" stroke="#2b66ff" stroke-width="9" stroke-linecap="round"/>
-              <circle cx="0" cy="0" r="7" fill="#2a3042"/>
-              <circle cx="0" cy="0" r="3" fill="#ffffff"/>
+              <g id="hands" transform="translate(160 160)">
+                <line id="minHand"  x1="0" y1="12" x2="0" y2="-92" stroke="#2a3042" stroke-width="6" stroke-linecap="round"/>
+                <polygon id="hourHand" points="0,-64 4.5,8 -4.5,8" fill="#2b66ff"/>
+                <circle cx="0" cy="0" r="7" fill="#2a3042"/>
+                <circle cx="0" cy="0" r="3" fill="#ffffff"/>
+              </g>
             </g>
+
+            <!-- ルーペ（マウス/指の位置を拡大して見せる） -->
+            <g id="loupe" clip-path="url(#loupeClip)" style="display:none">
+              <use href="#clockContent" id="loupeUse"/>
+            </g>
+            <circle id="loupeRing" cx="160" cy="160" r="55" fill="none" stroke="#2b66ff" stroke-width="3" style="display:none"/>
           </svg>
         </div>
 
@@ -290,6 +302,14 @@
   const toggleLong = document.getElementById("toggleLong");
   const toggleZone = document.getElementById("toggleZone");
   const toggleNums = document.getElementById("toggleNums");
+  const toggleBig  = document.getElementById("toggleBig");
+  const svgEl      = document.getElementById("clock");
+  const loupe      = document.getElementById("loupe");
+  const loupeRing  = document.getElementById("loupeRing");
+  const loupeUse   = document.getElementById("loupeUse");
+  const loupeClipC = document.getElementById("loupeClipC");
+  let showLoupe = false;
+  const LOUPE_SCALE = 2;
 
   const historyBox = document.getElementById("historyBox");
 
@@ -410,6 +430,9 @@
     toggleNums.classList.toggle("active", showNums);
     toggleZone.classList.toggle("active", showZone);
     toggleLong.classList.toggle("active", showLong);
+    toggleBig.classList.toggle("active", showLoupe);
+    loupe.style.display = showLoupe ? "" : "none";
+    loupeRing.style.display = showLoupe ? "" : "none";
   }
 
   // ----- かぶりなしプール（1..12 じ）-----
@@ -567,6 +590,17 @@
   toggleLong.addEventListener("click", ()=>{ showLong = !showLong; applyVisibility(); });
   toggleZone.addEventListener("click", ()=>{ showZone = !showZone; applyVisibility(); });
   toggleNums.addEventListener("click", ()=>{ showNums = !showNums; applyVisibility(); });
+  toggleBig.addEventListener("click", ()=>{ showLoupe = !showLoupe; applyVisibility(); });
+  function moveLoupe(clientX, clientY){
+    const rect = svgEl.getBoundingClientRect();
+    const cx = (clientX - rect.left) / rect.width  * 320;
+    const cy = (clientY - rect.top)  / rect.height * 320;
+    loupeClipC.setAttribute("cx", cx); loupeClipC.setAttribute("cy", cy);
+    loupeRing.setAttribute("cx", cx);  loupeRing.setAttribute("cy", cy);
+    loupeUse.setAttribute("transform", `translate(${cx} ${cy}) scale(${LOUPE_SCALE}) translate(${-cx} ${-cy})`);
+  }
+  svgEl.addEventListener("mousemove", (e)=>{ if(showLoupe) moveLoupe(e.clientX, e.clientY); });
+  svgEl.addEventListener("touchmove", (e)=>{ if(showLoupe && e.touches[0]){ moveLoupe(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, {passive:false});
 
   // 初期化
   resetState();
